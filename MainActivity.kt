@@ -1,7 +1,6 @@
 package com.am24.omegl
 
 import android.Manifest
-import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
@@ -23,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.navigation.NavHostController
@@ -237,7 +237,7 @@ fun ChatScreen(navController: NavHostController, chatId: String) {
         }
     }
 
-    val takeVideoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakeVideo()) { uri ->
+    val takeVideoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { uri ->
         uri?.let {
             uploadMedia(videoUri!!, context, messagesRef, "video", { loading = true }, { loading = false })
         }
@@ -310,7 +310,7 @@ fun ChatScreen(navController: NavHostController, chatId: String) {
                     FileProvider.getUriForFile(context, "${context.packageName}.provider", it)
                 }
                 videoUri?.let {
-                    takeVideoLauncher.launch(it)
+                    takeVideoLauncher.launch(videoUri!!)
                 }
             }) {
                 Text(text = "Take Video")
@@ -373,5 +373,13 @@ private fun endChat(chatId: String, navController: NavHostController) {
             popUpTo("chat/$chatId") { inclusive = true }
         }
     }.addOnFailureListener {
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun DefaultPreview() {
+    OmeglTheme {
+        MainScreen()
     }
 }
