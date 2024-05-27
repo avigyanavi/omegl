@@ -2,6 +2,7 @@ package com.am24.omegl
 
 import android.Manifest
 import android.content.Context
+import android.media.browse.MediaBrowser
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
@@ -24,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -31,6 +33,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import coil.compose.rememberAsyncImagePainter
 import com.am24.omegl.ui.theme.OmeglTheme
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
+import androidx.compose.ui.viewinterop.AndroidView
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.database.*
 import com.google.firebase.database.ktx.database
@@ -237,8 +248,8 @@ fun ChatScreen(navController: NavHostController, chatId: String) {
         }
     }
 
-    val takeVideoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { uri ->
-        uri?.let {
+    val takeVideoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { success ->
+        if (success && videoUri != null) {
             uploadMedia(videoUri!!, context, messagesRef, "video", { loading = true }, { loading = false })
         }
     }
@@ -257,7 +268,7 @@ fun ChatScreen(navController: NavHostController, chatId: String) {
                                 .align(if ((msg["from"] as String) == Firebase.auth.currentUser?.uid) Alignment.End else Alignment.Start)
                         )
                     }
-                    "image", "video" -> {
+                    "image" -> {
                         val painter = rememberAsyncImagePainter(msg["content"] as String)
                         Image(
                             painter = painter,
@@ -269,6 +280,9 @@ fun ChatScreen(navController: NavHostController, chatId: String) {
                                 .padding(8.dp)
                                 .align(if ((msg["from"] as String) == Firebase.auth.currentUser?.uid) Alignment.End else Alignment.Start)
                         )
+                    }
+                    "video" -> {
+                        VideoPlayer(videoUrl = msg["content"] as String)
                     }
                 }
             }
@@ -310,7 +324,7 @@ fun ChatScreen(navController: NavHostController, chatId: String) {
                     FileProvider.getUriForFile(context, "${context.packageName}.provider", it)
                 }
                 videoUri?.let {
-                    takeVideoLauncher.launch(videoUri!!)
+                    takeVideoLauncher.launch(it)
                 }
             }) {
                 Text(text = "Take Video")
@@ -326,6 +340,25 @@ fun ChatScreen(navController: NavHostController, chatId: String) {
     BackHandler {
         endChat(chatId, navController)
     }
+}
+
+@Composable
+fun VideoPlayer(videoUrl: String) {
+    val context = LocalContext.current
+    AndroidView(
+        factory = {
+            PlayerView(context).apply {
+                player = ExoPlayer.Builder(context).build().apply {
+                    setMediaItem(MediaItem.fromUri(videoUrl))
+                    prepare()
+                    playWhenReady = true
+                }
+            }
+        },
+        modifier = Modifier
+            .size(200.dp)
+            .padding(8.dp)
+    )
 }
 
 private fun uploadMedia(
