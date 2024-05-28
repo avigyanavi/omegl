@@ -248,8 +248,8 @@ fun ChatScreen(navController: NavHostController, chatId: String) {
         }
     }
 
-    val takeVideoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { success ->
-        if (success && videoUri != null) {
+    val takeVideoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { uri ->
+        uri?.let {
             uploadMedia(videoUri!!, context, messagesRef, "video", { loading = true }, { loading = false })
         }
     }
@@ -257,15 +257,18 @@ fun ChatScreen(navController: NavHostController, chatId: String) {
     Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Column(modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
             messages.forEach { msg ->
+                val alignment = if ((msg["from"] as String) == Firebase.auth.currentUser?.uid) Alignment.End else Alignment.Start
+                val backgroundColor = Color.Transparent
+
                 when (msg["type"]) {
                     "text" -> {
                         Text(
                             text = msg["content"] as String,
                             color = Color.White,
                             modifier = Modifier
-                                .background(if ((msg["from"] as String) == Firebase.auth.currentUser?.uid) Color.Green else Color.Gray)
+                                .background(backgroundColor)
                                 .padding(8.dp)
-                                .align(if ((msg["from"] as String) == Firebase.auth.currentUser?.uid) Alignment.End else Alignment.Start)
+                                .align(alignment)
                         )
                     }
                     "image" -> {
@@ -276,13 +279,13 @@ fun ChatScreen(navController: NavHostController, chatId: String) {
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .size(200.dp)
-                                .background(if ((msg["from"] as String) == Firebase.auth.currentUser?.uid) Color.Green else Color.Gray)
+                                .background(backgroundColor)
                                 .padding(8.dp)
-                                .align(if ((msg["from"] as String) == Firebase.auth.currentUser?.uid) Alignment.End else Alignment.Start)
+                                .align(alignment)
                         )
                     }
                     "video" -> {
-                        VideoPlayer(videoUrl = msg["content"] as String)
+                        VideoPlayer(videoUrl = msg["content"] as String, modifier = Modifier.align(alignment))
                     }
                 }
             }
@@ -324,7 +327,7 @@ fun ChatScreen(navController: NavHostController, chatId: String) {
                     FileProvider.getUriForFile(context, "${context.packageName}.provider", it)
                 }
                 videoUri?.let {
-                    takeVideoLauncher.launch(it)
+                    takeVideoLauncher.launch(videoUri!!)
                 }
             }) {
                 Text(text = "Take Video")
@@ -343,7 +346,7 @@ fun ChatScreen(navController: NavHostController, chatId: String) {
 }
 
 @Composable
-fun VideoPlayer(videoUrl: String) {
+fun VideoPlayer(videoUrl: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     AndroidView(
         factory = {
@@ -355,7 +358,7 @@ fun VideoPlayer(videoUrl: String) {
                 }
             }
         },
-        modifier = Modifier
+        modifier = modifier
             .size(200.dp)
             .padding(8.dp)
     )
