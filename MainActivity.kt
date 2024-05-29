@@ -28,8 +28,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.navArgument
 import androidx.navigation.compose.rememberNavController
 import coil.compose.rememberAsyncImagePainter
 import com.am24.omegl.ui.theme.OmeglTheme
@@ -105,9 +107,16 @@ fun MainScreen() {
         composable("sign_in") { SignInScreen(navController) }
         composable("dashboard") { DashboardScreen(navController) }
         composable("random_chat") { RandomChatScreen(navController) }
-        composable("chat/{chatId}") { backStackEntry ->
+        composable(
+            route = "chat/{chatId}?commonInterest={commonInterest}",
+            arguments = listOf(
+                navArgument("chatId") { type = NavType.StringType },
+                navArgument("commonInterest") { type = NavType.StringType; defaultValue = "" }
+            )
+        ) { backStackEntry ->
             val chatId = backStackEntry.arguments?.getString("chatId") ?: return@composable
-            ChatScreen(navController, chatId)
+            val commonInterest = backStackEntry.arguments?.getString("commonInterest")
+            ChatScreen(navController, chatId, commonInterest)
         }
     }
 }
@@ -155,20 +164,112 @@ fun SignInScreen(navController: NavHostController) {
 
 @Composable
 fun DashboardScreen(navController: NavHostController) {
+    val context = navController.context
+    val uid = Firebase.auth.currentUser?.uid ?: return
+    val userRef = Firebase.database.reference.child("users").child(uid)
+    var interest by remember { mutableStateOf("") }
+    val interests = remember { mutableStateListOf<String>() }
+    var interestBasedMatching by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        userRef.child("interests").addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                interests.clear()
+                snapshot.children.forEach {
+                    val interest = it.getValue(String::class.java)
+                    if (interest != null) {
+                        interests.add(interest)
+                    }
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        })
+    }
+
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Button(onClick = { navController.navigate("random_chat") }) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = interestBasedMatching,
+                onCheckedChange = { checked ->
+                    interestBasedMatching = checked
+                    if (!checked) {
+                        interests.clear()
+                    }
+                }
+            )
+            Text(text = "Interest-based Matching")
+        }
+
+        if (interestBasedMatching) {
+            Column {
+                interests.forEach {
+                    Text(text = it, modifier = Modifier.padding(4.dp))
+                }
+                BasicTextField(
+                    value = interest,
+                    onValueChange = { interest = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .background(Color.DarkGray),
+                    textStyle = LocalTextStyle.current.copy(color = Color.White)
+                )
+                Button(onClick = {
+                    if (interest.isNotBlank()) {
+                        loading = true
+                        val newInterestRef = userRef.child("interests").push()
+                        newInterestRef.setValue(interest)
+                            .addOnCompleteListener {
+                                interest = ""
+                                loading = false
+                            }
+                    }
+                }) {
+                    Text(text = "Add Interest")
+                }
+            }
+        }
+
+        if (loading) {
+            CircularProgressIndicator()
+        }
+
+        Button(onClick = {
+            val newUser = mapOf(
+                "uid" to uid,
+                "timestamp" to System.currentTimeMillis(),
+                "interestBased" to interestBasedMatching,
+                "interests" to interests
+            )
+            val waitingUsersRef = Firebase.database.reference.child("waitingUsers")
+            if (interestBasedMatching) {
+                waitingUsersRef.child("interest").child(uid).setValue(newUser)
+            } else {
+                waitingUsersRef.child("random").child(uid).setValue(newUser)
+            }
+            navController.navigate("random_chat")
+        }) {
             Text(text = "Random Chat")
         }
+
         Button(onClick = {
-            Firebase.auth.signOut()
-            val sharedPreferences = navController.context.getSharedPreferences("MyAppPrefs", Context.MODE_PRIVATE)
-            sharedPreferences.edit().remove("uid").apply()
-            navController.navigate("sign_in") {
-                popUpTo("dashboard") { inclusive = true }
+            Firebase.auth.currentUser?.delete()?.addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    Firebase.database.reference.child("users").child(uid).removeValue()
+                    Firebase.database.reference.child("waitingUsers").child("random").child(uid).removeValue()
+                    Firebase.database.reference.child("waitingUsers").child("interest").child(uid).removeValue()
+                    val sharedPreferences = context.getSharedPreferences("MyAppPrefs", Context.MODE_PRIVATE)
+                    sharedPreferences.edit().remove("uid").apply()
+                    navController.navigate("sign_in") {
+                        popUpTo("dashboard") { inclusive = true }
+                    }
+                }
             }
         }) {
             Text(text = "Logout")
@@ -180,42 +281,39 @@ fun DashboardScreen(navController: NavHostController) {
 fun RandomChatScreen(navController: NavHostController) {
     val context = navController.context
     val uid = Firebase.auth.currentUser?.uid ?: return
-    val waitingUsersRef = Firebase.database.reference.child("waitingUsers/random")
+    val waitingUsersRef = Firebase.database.reference.child("waitingUsers")
     val userRef = Firebase.database.reference.child("users").child(uid)
 
     LaunchedEffect(Unit) {
-        val newUser = mapOf("uid" to uid, "timestamp" to System.currentTimeMillis())
-        waitingUsersRef.child(uid).setValue(newUser)
+        userRef.child("currentChat").addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val chatId = snapshot.child("chatId").getValue(String::class.java)
+                val commonInterest = snapshot.child("commonInterest").getValue(String::class.java)
+                if (chatId != null) {
+                    navController.navigate("chat/$chatId?commonInterest=$commonInterest") {
+                        popUpTo("random_chat") { inclusive = true }
+                    }
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+            }
+        })
     }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(text = "Finding a random chat partner...")
 
-        LaunchedEffect(Unit) {
-            userRef.child("currentChat").addValueEventListener(object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    val chatId = snapshot.getValue(String::class.java)
-                    if (chatId != null) {
-                        navController.navigate("chat/$chatId") {
-                            popUpTo("random_chat") { inclusive = true }
-                        }
-                    }
-                }
-
-                override fun onCancelled(error: DatabaseError) {
-                }
-            })
-        }
-
         BackHandler {
-            waitingUsersRef.child(uid).removeValue()
+            waitingUsersRef.child("random").child(uid).removeValue()
+            waitingUsersRef.child("interest").child(uid).removeValue()
             navController.popBackStack()
         }
     }
 }
 
 @Composable
-fun ChatScreen(navController: NavHostController, chatId: String) {
+fun ChatScreen(navController: NavHostController, chatId: String, commonInterest: String?) {
     var message by remember { mutableStateOf(TextFieldValue("")) }
     val db = Firebase.database.reference
     val messagesRef = db.child("chats").child(chatId).child("messages")
@@ -255,6 +353,12 @@ fun ChatScreen(navController: NavHostController, chatId: String) {
     }
 
     Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        commonInterest?.let {
+            if (it.isNotEmpty()) {
+                Text(text = "You both like $it", color = Color.White, modifier = Modifier.padding(16.dp))
+            }
+        }
+
         Column(modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
             messages.forEach { msg ->
                 val alignment = if ((msg["from"] as String) == Firebase.auth.currentUser?.uid) Alignment.End else Alignment.Start
