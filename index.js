@@ -5,24 +5,50 @@ admin.initializeApp();
 const db = admin.database();
 const storage = admin.storage();
 
-// Random Matching
-exports.matchRandomUser = functions.database.ref('waitingUsers/random/{uid}')
+exports.matchRandomUser = functions.database.ref('waitingUsers/{matchingType}/{uid}')
     .onCreate(async (snap, context) => {
         const newUser = snap.val();
         const newUid = context.params.uid;
+        const matchingType = context.params.matchingType;
 
-        const waitingUsersRef = db.ref('waitingUsers/random');
+        const waitingUsersRef = db.ref(`waitingUsers/${matchingType}`);
         const waitingUserSnap = await waitingUsersRef.once('value');
         const waitingUsers = waitingUserSnap.val();
+
+        console.log(`Waiting users for ${matchingType}: `, waitingUsers);
 
         if (waitingUsers && Object.keys(waitingUsers).length >= 2) {
             const uids = Object.keys(waitingUsers);
 
-            let matchingUid;
-            for (const uid of uids) {
-                if (uid !== newUid) {
-                    matchingUid = uid;
-                    break;
+            let matchingUid = null;
+            let commonInterest = null;
+            if (matchingType === "interest") {
+                for (const uid of uids) {
+                    if (uid !== newUid) {
+                        const matchingUser = waitingUsers[uid];
+                        const newUserInterests = newUser.interests ? Object.values(newUser.interests) : [];
+                        const userInterests = matchingUser.interests ? Object.values(matchingUser.interests) : [];
+
+                        console.log(`New User Interests: ${newUserInterests}`);
+                        console.log(`Matching User Interests: ${userInterests}`);
+
+                        const commonInterests = newUserInterests.filter(value => userInterests.includes(value));
+
+                        console.log(`Common Interests: ${commonInterests}`);
+
+                        if (commonInterests.length > 0) {
+                            matchingUid = uid;
+                            commonInterest = commonInterests[0];
+                            break;
+                        }
+                    }
+                }
+            } else {
+                for (const uid of uids) {
+                    if (uid !== newUid) {
+                        matchingUid = uid;
+                        break;
+                    }
                 }
             }
 
@@ -35,17 +61,28 @@ exports.matchRandomUser = functions.database.ref('waitingUsers/random/{uid}')
                     user2: matchingUid,
                     messages: {}
                 };
-                updates[`users/${newUid}/currentChat`] = chatId;
-                updates[`users/${matchingUid}/currentChat`] = chatId;
-                updates[`waitingUsers/random/${newUid}`] = null;
-                updates[`waitingUsers/random/${matchingUid}`] = null;
+                updates[`users/${newUid}/currentChat`] = {
+                    chatId: chatId,
+                    commonInterest: commonInterest || ""
+                };
+                updates[`users/${matchingUid}/currentChat`] = {
+                    chatId: chatId,
+                    commonInterest: commonInterest || ""
+                };
+                updates[`waitingUsers/${matchingType}/${newUid}`] = null;
+                updates[`waitingUsers/${matchingType}/${matchingUid}`] = null;
+
+                console.log(`Matched users: ${newUid} and ${matchingUid} with chatId: ${chatId} and commonInterest: ${commonInterest}`);
 
                 await db.ref().update(updates);
+            } else {
+                console.log("No matching user found.");
             }
+        } else {
+            console.log("Not enough users to match.");
         }
     });
 
-// Chat Cleanup
 exports.cleanUpChat = functions.database.ref('chats/{chatId}')
     .onDelete(async (snap, context) => {
         const chatId = context.params.chatId;
