@@ -2,21 +2,42 @@ package com.am24.omegl
 
 import android.Manifest
 import android.content.Context
-import android.media.browse.MediaBrowser
 import android.net.Uri
 import android.os.Bundle
-import android.provider.MediaStore
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -27,36 +48,36 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.navArgument
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import coil.compose.rememberAsyncImagePainter
 import com.am24.omegl.ui.theme.OmeglTheme
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
-import androidx.compose.ui.viewinterop.AndroidView
 import com.google.firebase.auth.ktx.auth
-import com.google.firebase.database.*
+import com.google.firebase.database.ChildEventListener
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.DatabaseReference
+import com.google.firebase.database.ValueEventListener
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.storage.ktx.storage
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        checkExistingUser()
         requestPermissions()
         setContent {
             OmeglTheme {
@@ -67,6 +88,14 @@ class MainActivity : ComponentActivity() {
                     MainScreen()
                 }
             }
+        }
+    }
+
+    private fun checkExistingUser() {
+        val sharedPreferences = getSharedPreferences("MyAppPrefs", Context.MODE_PRIVATE)
+        val uid = sharedPreferences.getString("uid", null)
+        if (uid != null) {
+            Firebase.auth.signInAnonymously()
         }
     }
 
@@ -103,6 +132,34 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainScreen() {
     val navController = rememberNavController()
+    val context = LocalContext.current
+    val uid = Firebase.auth.currentUser?.uid
+
+    LaunchedEffect(uid) {
+        uid?.let {
+            val notificationsRef = Firebase.database.reference.child("notifications").child(it)
+            notificationsRef.addChildEventListener(object : ChildEventListener {
+                override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                    val notification = snapshot.getValue(Notification::class.java)
+                    notification?.let { notif ->
+                        Toast.makeText(context, notif.message, Toast.LENGTH_SHORT).show()
+                        if (notif.type == "chatEnded") {
+                            navController.navigate("dashboard") {
+                                popUpTo("chat/{chatId}") { inclusive = true }
+                            }
+                        }
+                    }
+                    snapshot.ref.removeValue()  // Clear the notification after showing
+                }
+
+                override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {}
+                override fun onChildRemoved(snapshot: DataSnapshot) {}
+                override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+                override fun onCancelled(error: DatabaseError) {}
+            })
+        }
+    }
+
     NavHost(navController = navController, startDestination = "sign_in") {
         composable("sign_in") { SignInScreen(navController) }
         composable("dashboard") { DashboardScreen(navController) }
@@ -114,12 +171,17 @@ fun MainScreen() {
                 navArgument("commonInterest") { type = NavType.StringType; defaultValue = "" }
             )
         ) { backStackEntry ->
-            val chatId = backStackEntry.arguments?.getString("chatId") ?: return@composable
+            val chatId = backStackEntry.arguments?.getString("chatId")
             val commonInterest = backStackEntry.arguments?.getString("commonInterest")
             ChatScreen(navController, chatId, commonInterest)
         }
     }
 }
+
+data class Notification(
+    val message: String = "",
+    val type: String = ""
+)
 
 @Composable
 fun SignInScreen(navController: NavHostController) {
@@ -171,6 +233,8 @@ fun DashboardScreen(navController: NavHostController) {
     val interests = remember { mutableStateListOf<String>() }
     var interestBasedMatching by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
+    val welcomeMessage = "Welcome $uid"
+    var waitingUserCount by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
         userRef.child("interests").addValueEventListener(object : ValueEventListener {
@@ -186,6 +250,15 @@ fun DashboardScreen(navController: NavHostController) {
 
             override fun onCancelled(error: DatabaseError) {}
         })
+
+        val waitingUsersRef = Firebase.database.reference.child("waitingUsers")
+        waitingUsersRef.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                waitingUserCount = snapshot.childrenCount.toInt()
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        })
     }
 
     Column(
@@ -193,6 +266,15 @@ fun DashboardScreen(navController: NavHostController) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        AnimatedVisibility(
+            visible = true,
+            enter = fadeIn(animationSpec = tween(durationMillis = 1000))
+        ) {
+            Text(text = welcomeMessage, modifier = Modifier.padding(16.dp), color = Color.White)
+        }
+
+        Text(text = "Waiting Users: $waitingUserCount", modifier = Modifier.padding(16.dp), color = Color.White)
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(
                 checked = interestBasedMatching,
@@ -259,20 +341,44 @@ fun DashboardScreen(navController: NavHostController) {
         }
 
         Button(onClick = {
-            Firebase.auth.currentUser?.delete()?.addOnCompleteListener { task ->
-                if (task.isSuccessful) {
-                    Firebase.database.reference.child("users").child(uid).removeValue()
-                    Firebase.database.reference.child("waitingUsers").child("random").child(uid).removeValue()
-                    Firebase.database.reference.child("waitingUsers").child("interest").child(uid).removeValue()
-                    val sharedPreferences = context.getSharedPreferences("MyAppPrefs", Context.MODE_PRIVATE)
-                    sharedPreferences.edit().remove("uid").apply()
-                    navController.navigate("sign_in") {
-                        popUpTo("dashboard") { inclusive = true }
+            deleteAccount(navController, uid, context)
+        }) {
+            Text(text = "Delete Account")
+        }
+    }
+}
+
+private fun deleteAccount(navController: NavHostController, uid: String, context: Context) {
+    val db = Firebase.database.reference
+    Firebase.auth.currentUser?.delete()?.addOnCompleteListener { task ->
+        if (task.isSuccessful) {
+            db.child("users").child(uid).removeValue()
+            db.child("waitingUsers").child("random").child(uid).removeValue()
+            db.child("waitingUsers").child("interest").child(uid).removeValue()
+            db.child("chats").orderByChild("user1").equalTo(uid).addListenerForSingleValueEvent(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    snapshot.children.forEach {
+                        it.ref.removeValue()
                     }
                 }
+
+                override fun onCancelled(error: DatabaseError) {}
+            })
+            db.child("chats").orderByChild("user2").equalTo(uid).addListenerForSingleValueEvent(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    snapshot.children.forEach {
+                        it.ref.removeValue()
+                    }
+                }
+
+                override fun onCancelled(error: DatabaseError) {}
+            })
+
+            val sharedPreferences = context.getSharedPreferences("MyAppPrefs", Context.MODE_PRIVATE)
+            sharedPreferences.edit().remove("uid").apply()
+            navController.navigate("sign_in") {
+                popUpTo("dashboard") { inclusive = true }
             }
-        }) {
-            Text(text = "Logout")
         }
     }
 }
@@ -313,7 +419,8 @@ fun RandomChatScreen(navController: NavHostController) {
 }
 
 @Composable
-fun ChatScreen(navController: NavHostController, chatId: String, commonInterest: String?) {
+fun ChatScreen(navController: NavHostController, chatId: String?, commonInterest: String?) {
+    if (chatId == null) return
     var message by remember { mutableStateOf(TextFieldValue("")) }
     val db = Firebase.database.reference
     val messagesRef = db.child("chats").child(chatId).child("messages")
@@ -509,6 +616,9 @@ private fun endChat(chatId: String, navController: NavHostController) {
     val chatRef = db.child("chats").child(chatId)
 
     chatRef.removeValue().addOnSuccessListener {
+        val context = navController.context
+        Firebase.database.reference.child("users").child(Firebase.auth.currentUser?.uid ?: "").child("currentChat").removeValue()
+        Toast.makeText(context, "Chat ended", Toast.LENGTH_SHORT).show()
         navController.navigate("dashboard") {
             popUpTo("chat/$chatId") { inclusive = true }
         }
