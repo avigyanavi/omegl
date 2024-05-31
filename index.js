@@ -101,11 +101,18 @@ exports.cleanUpChat = functions.database.ref('chats/{chatId}')
             }
         }
 
+        const notification = {
+            message: "Chat ended",
+            type: "chatEnded"
+        };
+
         if (user1) {
             await db.ref(`users/${user1}/currentChat`).remove();
+            await db.ref(`notifications/${user1}`).push(notification);
         }
 
         if (user2) {
             await db.ref(`users/${user2}/currentChat`).remove();
+            await db.ref(`notifications/${user2}`).push(notification);
         }
     });
