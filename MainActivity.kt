@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -142,7 +141,6 @@ fun MainScreen() {
                 override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
                     val notification = snapshot.getValue(Notification::class.java)
                     notification?.let { notif ->
-                        Toast.makeText(context, notif.message, Toast.LENGTH_SHORT).show()
                         if (notif.type == "chatEnded") {
                             navController.navigate("dashboard") {
                                 popUpTo("chat/{chatId}") { inclusive = true }
@@ -273,7 +271,7 @@ fun DashboardScreen(navController: NavHostController) {
             Text(text = welcomeMessage, modifier = Modifier.padding(16.dp), color = Color.White)
         }
 
-        Text(text = "Waiting Users: $waitingUserCount", modifier = Modifier.padding(16.dp), color = Color.White)
+        Text(text = "Waiting users: $waitingUserCount", color = Color.White)
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(
@@ -441,6 +439,20 @@ fun ChatScreen(navController: NavHostController, chatId: String?, commonInterest
             override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
             override fun onCancelled(error: DatabaseError) {}
         })
+
+        val chatRef = db.child("chats").child(chatId)
+        chatRef.child("ended").addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val chatEnded = snapshot.getValue(Boolean::class.java) ?: false
+                if (chatEnded) {
+                    navController.navigate("dashboard") {
+                        popUpTo("chat/$chatId") { inclusive = true }
+                    }
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        })
     }
 
     val context = LocalContext.current
@@ -545,14 +557,14 @@ fun ChatScreen(navController: NavHostController, chatId: String?, commonInterest
             }
         }
         Button(onClick = {
-            endChat(chatId, navController)
+            endChat(chatId)
         }) {
             Text(text = "End Chat")
         }
     }
 
     BackHandler {
-        endChat(chatId, navController)
+        endChat(chatId)
     }
 }
 
@@ -611,19 +623,11 @@ private fun createVideoFile(context: Context): File? {
     return File.createTempFile("MP4_${timestamp}_", ".mp4", storageDir)
 }
 
-private fun endChat(chatId: String, navController: NavHostController) {
+private fun endChat(chatId: String) {
     val db = Firebase.database.reference
     val chatRef = db.child("chats").child(chatId)
-
-    chatRef.removeValue().addOnSuccessListener {
-        val context = navController.context
-        Firebase.database.reference.child("users").child(Firebase.auth.currentUser?.uid ?: "").child("currentChat").removeValue()
-        Toast.makeText(context, "Chat ended", Toast.LENGTH_SHORT).show()
-        navController.navigate("dashboard") {
-            popUpTo("chat/$chatId") { inclusive = true }
-        }
-    }.addOnFailureListener {
-    }
+    chatRef.child("ended").setValue(true)
+    chatRef.removeValue()
 }
 
 @Preview(showBackground = true)
