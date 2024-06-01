@@ -59,7 +59,8 @@ exports.matchRandomUser = functions.database.ref('waitingUsers/{matchingType}/{u
                 updates[`chats/${chatId}`] = {
                     user1: newUid,
                     user2: matchingUid,
-                    messages: {}
+                    messages: {},
+                    ended: false // Flag to indicate chat has ended
                 };
                 updates[`users/${newUid}/currentChat`] = {
                     chatId: chatId,
@@ -101,18 +102,9 @@ exports.cleanUpChat = functions.database.ref('chats/{chatId}')
             }
         }
 
-        const notification = {
-            message: "Chat ended",
-            type: "chatEnded"
-        };
+        const updates = {};
+        updates[`users/${user1}/currentChat`] = null;
+        updates[`users/${user2}/currentChat`] = null;
 
-        if (user1) {
-            await db.ref(`users/${user1}/currentChat`).remove();
-            await db.ref(`notifications/${user1}`).push(notification);
-        }
-
-        if (user2) {
-            await db.ref(`users/${user2}/currentChat`).remove();
-            await db.ref(`notifications/${user2}`).push(notification);
-        }
+        await db.ref().update(updates);
     });
