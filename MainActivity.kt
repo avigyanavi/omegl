@@ -14,6 +14,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,9 +24,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -64,18 +68,27 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.ValueEventListener
-import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.storage.ktx.storage
+import com.google.android.gms.ads.AdRequest
+import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.ads.interstitial.InterstitialAd
+import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
+import com.google.android.gms.ads.AdError
+import com.google.android.gms.ads.FullScreenContentCallback
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), AdCallback {
+
+    private var mInterstitialAd: InterstitialAd? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        MobileAds.initialize(this) {}
+        loadAd()
         checkExistingUser()
         requestPermissions()
         setContent {
@@ -84,9 +97,43 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MainScreen()
+                    MainScreen(this)
                 }
             }
+        }
+    }
+
+    private fun loadAd() {
+        val adRequest = AdRequest.Builder().build()
+        InterstitialAd.load(this, "ca-app-pub-5094389629300846/6942625673", adRequest, object : InterstitialAdLoadCallback() {
+            override fun onAdFailedToLoad(adError: LoadAdError) {
+                mInterstitialAd = null
+            }
+
+            override fun onAdLoaded(interstitialAd: InterstitialAd) {
+                mInterstitialAd = interstitialAd
+            }
+        })
+    }
+
+    override fun showAd() {
+        if (mInterstitialAd != null) {
+            mInterstitialAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
+                override fun onAdDismissedFullScreenContent() {
+                    mInterstitialAd = null
+                    loadAd()
+                }
+
+                override fun onAdFailedToShowFullScreenContent(adError: AdError?) {
+                    mInterstitialAd = null
+                    loadAd()
+                }
+
+                override fun onAdShowedFullScreenContent() {
+                    mInterstitialAd = null
+                }
+            }
+            mInterstitialAd?.show(this)
         }
     }
 
@@ -128,10 +175,13 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+interface AdCallback {
+    fun showAd()
+}
+
 @Composable
-fun MainScreen() {
+fun MainScreen(adCallback: AdCallback) {
     val navController = rememberNavController()
-    val context = LocalContext.current
     val uid = Firebase.auth.currentUser?.uid
 
     LaunchedEffect(uid) {
@@ -145,9 +195,10 @@ fun MainScreen() {
                             navController.navigate("dashboard") {
                                 popUpTo("chat/{chatId}") { inclusive = true }
                             }
+                            adCallback.showAd()
                         }
                     }
-                    snapshot.ref.removeValue()  // Clear the notification after showing
+                    snapshot.ref.removeValue()
                 }
 
                 override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {}
@@ -171,7 +222,7 @@ fun MainScreen() {
         ) { backStackEntry ->
             val chatId = backStackEntry.arguments?.getString("chatId")
             val commonInterest = backStackEntry.arguments?.getString("commonInterest")
-            ChatScreen(navController, chatId, commonInterest)
+            ChatScreen(navController, chatId, commonInterest, adCallback)
         }
     }
 }
@@ -288,8 +339,22 @@ fun DashboardScreen(navController: NavHostController) {
 
         if (interestBasedMatching) {
             Column {
-                interests.forEach {
-                    Text(text = it, modifier = Modifier.padding(4.dp))
+                interests.forEach { interest ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = interest,
+                            modifier = Modifier.padding(4.dp)
+                        )
+                        Icon(
+                            imageVector = Icons.Default.Clear,
+                            contentDescription = "Remove interest",
+                            tint = Color.Red,
+                            modifier = Modifier.clickable {
+                                interests.remove(interest)
+                                userRef.child("interests").setValue(interests)
+                            }
+                        )
+                    }
                 }
                 BasicTextField(
                     value = interest,
@@ -383,7 +448,6 @@ private fun deleteAccount(navController: NavHostController, uid: String, context
 
 @Composable
 fun RandomChatScreen(navController: NavHostController) {
-    val context = navController.context
     val uid = Firebase.auth.currentUser?.uid ?: return
     val waitingUsersRef = Firebase.database.reference.child("waitingUsers")
     val userRef = Firebase.database.reference.child("users").child(uid)
@@ -417,7 +481,7 @@ fun RandomChatScreen(navController: NavHostController) {
 }
 
 @Composable
-fun ChatScreen(navController: NavHostController, chatId: String?, commonInterest: String?) {
+fun ChatScreen(navController: NavHostController, chatId: String?, commonInterest: String?, adCallback: AdCallback) {
     if (chatId == null) return
     var message by remember { mutableStateOf(TextFieldValue("")) }
     val db = Firebase.database.reference
@@ -448,11 +512,15 @@ fun ChatScreen(navController: NavHostController, chatId: String?, commonInterest
                     navController.navigate("dashboard") {
                         popUpTo("chat/$chatId") { inclusive = true }
                     }
+                    adCallback.showAd()
                 }
             }
 
             override fun onCancelled(error: DatabaseError) {}
         })
+
+        val onDisconnectRef = chatRef.child("ended")
+        onDisconnectRef.onDisconnect().setValue(true)
     }
 
     val context = LocalContext.current
@@ -557,14 +625,24 @@ fun ChatScreen(navController: NavHostController, chatId: String?, commonInterest
             }
         }
         Button(onClick = {
-            endChat(chatId)
+            endChat(chatId, messagesRef, adCallback)
         }) {
             Text(text = "End Chat")
         }
     }
 
     BackHandler {
-        endChat(chatId)
+        endChat(chatId, messagesRef, adCallback)
+    }
+}
+
+private fun endChat(chatId: String, messagesRef: DatabaseReference, adCallback: AdCallback) {
+    val db = Firebase.database.reference
+    val chatRef = db.child("chats").child(chatId)
+    chatRef.child("ended").setValue(true).addOnCompleteListener {
+        chatRef.removeValue().addOnCompleteListener {
+            adCallback.showAd()
+        }
     }
 }
 
@@ -623,17 +701,14 @@ private fun createVideoFile(context: Context): File? {
     return File.createTempFile("MP4_${timestamp}_", ".mp4", storageDir)
 }
 
-private fun endChat(chatId: String) {
-    val db = Firebase.database.reference
-    val chatRef = db.child("chats").child(chatId)
-    chatRef.child("ended").setValue(true)
-    chatRef.removeValue()
-}
-
 @Preview(showBackground = true)
 @Composable
 fun DefaultPreview() {
     OmeglTheme {
-        MainScreen()
+        MainScreen(object : AdCallback {
+            override fun showAd() {
+                // No-op for preview
+            }
+        })
     }
 }
