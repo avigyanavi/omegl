@@ -2,6 +2,7 @@ package com.am24.omegl
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -656,6 +657,12 @@ fun VideoPlayer(videoUrl: String, modifier: Modifier = Modifier) {
                     setMediaItem(MediaItem.fromUri(videoUrl))
                     prepare()
                     playWhenReady = true
+                    setOnClickListener {
+                        val intent = Intent(context, FullscreenVideoActivity::class.java).apply {
+                            putExtra("videoUrl", videoUrl)
+                        }
+                        context.startActivity(intent)
+                    }
                 }
             }
         },
