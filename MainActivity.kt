@@ -63,20 +63,22 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.rememberAsyncImagePainter
 import com.am24.omegl.ui.theme.OmeglTheme
+import com.google.android.gms.ads.AdError
+import com.google.android.gms.ads.AdRequest
+import com.google.android.gms.ads.FullScreenContentCallback
+import com.google.android.gms.ads.LoadAdError
+import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.ads.interstitial.InterstitialAd
+import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.database.ChildEventListener
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.storage.ktx.storage
-import com.google.android.gms.ads.AdRequest
-import com.google.android.gms.ads.MobileAds
-import com.google.android.gms.ads.interstitial.InterstitialAd
-import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
-import com.google.android.gms.ads.AdError
-import com.google.android.gms.ads.FullScreenContentCallback
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -125,7 +127,7 @@ class MainActivity : ComponentActivity(), AdCallback {
                     loadAd()
                 }
 
-                override fun onAdFailedToShowFullScreenContent(adError: AdError?) {
+                override fun onAdFailedToShowFullScreenContent(p0: AdError) {
                     mInterstitialAd = null
                     loadAd()
                 }
@@ -213,7 +215,7 @@ fun MainScreen(adCallback: AdCallback) {
     NavHost(navController = navController, startDestination = "sign_in") {
         composable("sign_in") { SignInScreen(navController) }
         composable("dashboard") { DashboardScreen(navController) }
-        composable("random_chat") { RandomChatScreen(navController) }
+        composable("start_chat") { RandomChatScreen(navController) }
         composable(
             route = "chat/{chatId}?commonInterest={commonInterest}",
             arguments = listOf(
@@ -471,7 +473,7 @@ fun RandomChatScreen(navController: NavHostController) {
     }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(text = "Finding a random chat partner...")
+        Text(text = "Finding a random/interest-based chat partner...")
 
         BackHandler {
             waitingUsersRef.child("random").child(uid).removeValue()
@@ -574,6 +576,12 @@ fun ChatScreen(navController: NavHostController, chatId: String?, commonInterest
                                 .background(backgroundColor)
                                 .padding(8.dp)
                                 .align(alignment)
+                                .clickable {
+                                    val intent = Intent(context, FullscreenPictureActivity::class.java).apply {
+                                        putExtra("pictureUrl", msg["content"] as String)
+                                    }
+                                    context.startActivity(intent)
+                                }
                         )
                     }
                     "video" -> {
@@ -656,7 +664,7 @@ fun VideoPlayer(videoUrl: String, modifier: Modifier = Modifier) {
                 player = ExoPlayer.Builder(context).build().apply {
                     setMediaItem(MediaItem.fromUri(videoUrl))
                     prepare()
-                    playWhenReady = true
+                    playWhenReady = false
                     setOnClickListener {
                         val intent = Intent(context, FullscreenVideoActivity::class.java).apply {
                             putExtra("videoUrl", videoUrl)
