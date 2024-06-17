@@ -1,4 +1,4 @@
-package com.am24.omegl
+package com.am24.omeglecreations
 
 import android.Manifest
 import android.content.Context
@@ -62,7 +62,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.rememberAsyncImagePainter
-import com.am24.omegl.ui.theme.OmeglTheme
+import com.am24.omeglecreations.ui.theme.Omeglecreationstheme
 import com.google.android.gms.ads.AdError
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.FullScreenContentCallback
@@ -95,7 +95,7 @@ class MainActivity : ComponentActivity(), AdCallback {
         checkExistingUser()
         requestPermissions()
         setContent {
-            OmeglTheme {
+            Omeglecreationstheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -108,7 +108,7 @@ class MainActivity : ComponentActivity(), AdCallback {
 
     private fun loadAd() {
         val adRequest = AdRequest.Builder().build()
-        InterstitialAd.load(this, "ca-app-pub-5094389629300846/6942625673", adRequest, object : InterstitialAdLoadCallback() {
+        InterstitialAd.load(this, "ca-app-pub-5094389629300846/7846860848", adRequest, object : InterstitialAdLoadCallback() {
             override fun onAdFailedToLoad(adError: LoadAdError) {
                 mInterstitialAd = null
             }
@@ -215,7 +215,7 @@ fun MainScreen(adCallback: AdCallback) {
     NavHost(navController = navController, startDestination = "sign_in") {
         composable("sign_in") { SignInScreen(navController) }
         composable("dashboard") { DashboardScreen(navController) }
-        composable("start_chat") { RandomChatScreen(navController) }
+        composable("random_chat") { RandomChatScreen(navController) }
         composable(
             route = "chat/{chatId}?commonInterest={commonInterest}",
             arguments = listOf(
@@ -403,7 +403,7 @@ fun DashboardScreen(navController: NavHostController) {
             }
             navController.navigate("random_chat")
         }) {
-            Text(text = "Random Chat")
+            Text(text = "Start Chat")
         }
 
         Button(onClick = {
@@ -549,7 +549,10 @@ fun ChatScreen(navController: NavHostController, chatId: String?, commonInterest
             }
         }
 
-        Column(modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
+        Column(modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .padding(16.dp)) {
             messages.forEach { msg ->
                 val alignment = if ((msg["from"] as String) == Firebase.auth.currentUser?.uid) Alignment.End else Alignment.Start
                 val backgroundColor = Color.Transparent
@@ -577,7 +580,10 @@ fun ChatScreen(navController: NavHostController, chatId: String?, commonInterest
                                 .padding(8.dp)
                                 .align(alignment)
                                 .clickable {
-                                    val intent = Intent(context, FullscreenPictureActivity::class.java).apply {
+                                    val intent = Intent(
+                                        context,
+                                        FullscreenPictureActivity::class.java
+                                    ).apply {
                                         putExtra("pictureUrl", msg["content"] as String)
                                     }
                                     context.startActivity(intent)
@@ -719,7 +725,7 @@ private fun createVideoFile(context: Context): File? {
 @Preview(showBackground = true)
 @Composable
 fun DefaultPreview() {
-    OmeglTheme {
+    Omeglecreationstheme {
         MainScreen(object : AdCallback {
             override fun showAd() {
                 // No-op for preview
