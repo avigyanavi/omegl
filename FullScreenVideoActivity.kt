@@ -1,4 +1,4 @@
-package com.am24.omegl
+package com.am24.omeglecreations
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -12,14 +12,14 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import com.am24.omegl.ui.theme.OmeglTheme
+import com.am24.omeglecreations.ui.theme.Omeglecreationstheme
 
 class FullscreenVideoActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val videoUrl = intent.getStringExtra("videoUrl") ?: return
         setContent {
-            OmeglTheme {
+            Omeglecreationstheme{
                 Surface(
                     modifier = Modifier.fillMaxSize()
                 ) {
