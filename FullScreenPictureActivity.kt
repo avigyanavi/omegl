@@ -1,4 +1,4 @@
-package com.am24.omegl
+package com.am24.omeglecreations
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,14 +13,14 @@ import androidx.compose.ui.platform.LocalContext
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import coil.size.Size
-import com.am24.omegl.ui.theme.OmeglTheme
+import com.am24.omeglecreations.ui.theme.Omeglecreationstheme
 
 class FullscreenPictureActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val pictureUrl = intent.getStringExtra("pictureUrl") ?: return
         setContent {
-            OmeglTheme {
+            Omeglecreationstheme{
                 Surface(
                     modifier = Modifier.fillMaxSize()
                 ) {
