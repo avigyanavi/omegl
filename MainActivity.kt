@@ -491,6 +491,7 @@ fun ChatScreen(navController: NavHostController, chatId: String?, commonInterest
     val messagesRef = db.child("chats").child(chatId).child("messages")
     val messages = remember { mutableStateListOf<Map<String, Any>>() }
     var loading by remember { mutableStateOf(false) }
+    var uploadProgress by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
         messagesRef.addChildEventListener(object : ChildEventListener {
@@ -532,13 +533,13 @@ fun ChatScreen(navController: NavHostController, chatId: String?, commonInterest
 
     val takePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success && imageUri != null) {
-            uploadMedia(imageUri!!, context, messagesRef, "image", { loading = true }) { loading = false }
+            uploadMedia(imageUri!!, context, messagesRef, "image", { loading = true }, { progress -> uploadProgress = progress }) { loading = false }
         }
     }
 
     val takeVideoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { uri ->
         uri?.let {
-            uploadMedia(videoUri!!, context, messagesRef, "video", { loading = true }, { loading = false })
+            uploadMedia(videoUri!!, context, messagesRef, "video", { loading = true }, { progress -> uploadProgress = progress }) { loading = false }
         }
     }
 
@@ -598,7 +599,10 @@ fun ChatScreen(navController: NavHostController, chatId: String?, commonInterest
         }
 
         if (loading) {
-            CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+            Box(contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(progress = uploadProgress / 100f, modifier = Modifier.size(50.dp))
+                Text(text = "$uploadProgress%", color = Color.White)
+            }
         }
 
         BasicTextField(
@@ -692,12 +696,17 @@ private fun uploadMedia(
     messagesRef: DatabaseReference,
     type: String,
     onStart: () -> Unit,
+    onProgress: (Int) -> Unit,
     onComplete: () -> Unit
 ) {
     val storageRef = Firebase.storage.reference.child("media/${System.currentTimeMillis()}.${if (type == "image") "jpg" else "mp4"}")
 
     onStart()
-    storageRef.putFile(uri).addOnSuccessListener {
+    val uploadTask = storageRef.putFile(uri)
+    uploadTask.addOnProgressListener {
+        val progress = (100.0 * it.bytesTransferred / it.totalByteCount).toInt()
+        onProgress(progress)
+    }.addOnSuccessListener {
         storageRef.downloadUrl.addOnSuccessListener { downloadUri ->
             val message = mapOf("type" to type, "content" to downloadUri.toString(), "from" to Firebase.auth.currentUser?.uid)
             messagesRef.push().setValue(message)
